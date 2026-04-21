@@ -38,12 +38,24 @@ func InitDB(cfg *Config) (*gorm.DB, error) {
 }
 
 func RunMigrations(db *gorm.DB) error {
-	return db.AutoMigrate(
+	if err := db.AutoMigrate(
+		&entity.Role{},
 		&entity.User{},
 		&entity.Session{},
 		&entity.Post{},
 		&entity.Comment{},
 		&entity.Tag{},
 		&entity.PostTag{},
-	)
+	); err != nil {
+		return err
+	}
+
+	for _, roleName := range []string{"admin", "author", "reader"} {
+		role := entity.Role{Name: roleName}
+		if err := db.Where("name = ?", roleName).FirstOrCreate(&role).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

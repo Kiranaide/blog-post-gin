@@ -49,6 +49,7 @@ func main() {
 	route.SetupRouter(router, &route.Routes{
 		HealthHandler: healthHandler,
 		AuthHandler:   authHandler,
+		AuthService:   authService,
 	})
 
 	router.GET("/docs/*any", openapiui.WrapHandler(openapiui.Config{

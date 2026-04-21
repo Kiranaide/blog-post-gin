@@ -28,6 +28,7 @@ type SessionCookieConfig struct {
 type JWTClaims struct {
 	UserID    string `json:"userId" type:"uuid"`
 	Username  string `json:"username"`
+	Role      string `json:"role"`
 	TokenType string `json:"tokenType"`
 	jwt.RegisteredClaims
 }

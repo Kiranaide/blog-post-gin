@@ -14,6 +14,7 @@ const (
 	ContextClaimsKey   = "auth.claims"
 	ContextUserIDKey   = "auth.user_id"
 	ContextUsernameKey = "auth.username"
+	ContextRoleKey     = "auth.role"
 )
 
 func Authenticate(auth *service.AuthService) gin.HandlerFunc {
@@ -45,6 +46,7 @@ func Authenticate(auth *service.AuthService) gin.HandlerFunc {
 		c.Set(ContextClaimsKey, claims)
 		c.Set(ContextUserIDKey, claims.UserID)
 		c.Set(ContextUsernameKey, claims.Username)
+		c.Set(ContextRoleKey, claims.Role)
 		c.Next()
 	}
 }
@@ -74,4 +76,13 @@ func GetUsername(c *gin.Context) (string, bool) {
 	}
 	castedUsername, ok := username.(string)
 	return castedUsername, ok
+}
+
+func GetRole(c *gin.Context) (string, bool) {
+	role, exists := c.Get(ContextRoleKey)
+	if !exists {
+		return "", false
+	}
+	castedRole, ok := role.(string)
+	return castedRole, ok
 }

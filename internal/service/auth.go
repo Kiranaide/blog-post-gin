@@ -48,9 +48,15 @@ func (s *AuthService) Register(req dto.RegisterRequest) (*response.RegisterRespo
 		return nil, "", helper.ErrInternal.WithCause(err)
 	}
 
+	defaultRoleID, err := s.getRoleIDByName("user")
+	if err != nil {
+		return nil, "", helper.ErrInternal.WithCause(err)
+	}
+
 	user := entity.User{
 		ID:       uuid.New(),
 		Name:     req.Name,
+		RoleID:   defaultRoleID,
 		Username: req.Username,
 		Password: hashed,
 	}
@@ -81,7 +87,12 @@ func (s *AuthService) Login(req dto.LoginRequest, userAgent, ip string) (*respon
 		return nil, "", "", helper.ErrInvalidCredentials.WithMessage("Invalid username or password")
 	}
 
-	accessToken, err := s.GenerateToken(user.ID, user.Username)
+	roleName, err := s.GetUserRoleByID(user.ID.String())
+	if err != nil {
+		return nil, "", "", helper.ErrInternal.WithCause(err)
+	}
+
+	accessToken, err := s.GenerateToken(user.ID, user.Username, roleName)
 	if err != nil {
 		return nil, "", "", helper.ErrInternal.WithCause(err)
 	}
@@ -198,7 +209,12 @@ func (s *AuthService) Refresh(refreshToken, userAgent, ip string) (*response.Ref
 		return nil, "", "", helper.ErrInternal.WithCause(err)
 	}
 
-	accessToken, err := s.GenerateToken(user.ID, user.Username)
+	roleName, err := s.GetUserRoleByID(user.ID.String())
+	if err != nil {
+		return nil, "", "", helper.ErrInternal.WithCause(err)
+	}
+
+	accessToken, err := s.GenerateToken(user.ID, user.Username, roleName)
 	if err != nil {
 		return nil, "", "", helper.ErrInternal.WithCause(err)
 	}
@@ -224,12 +240,13 @@ func (s *AuthService) Logout(refreshToken string) error {
 	return nil
 }
 
-func (s *AuthService) GenerateToken(userID uuid.UUID, username string) (string, error) {
+func (s *AuthService) GenerateToken(userID uuid.UUID, username string, role string) (string, error) {
 	now := time.Now()
 
 	claims := entity.JWTClaims{
 		UserID:    userID.String(),
 		Username:  username,
+		Role:      role,
 		TokenType: entity.AccessTokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
@@ -253,12 +270,17 @@ func (s *AuthService) GenerateToken(userID uuid.UUID, username string) (string, 
 }
 
 func (s *AuthService) ValidateToken(signedToken string) (*entity.JWTClaims, error) {
-	token, err := jwt.ParseWithClaims(signedToken, &entity.JWTClaims{}, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, helper.ErrTokenInvalid.WithMessage("Unexpected signing method")
-		}
-		return []byte(s.jc.AccessSecret), nil
-	})
+	token, err := jwt.ParseWithClaims(
+		signedToken,
+		&entity.JWTClaims{},
+		func(token *jwt.Token) (any, error) {
+			return []byte(s.jc.AccessSecret), nil
+		},
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(s.jc.Issuer),
+		jwt.WithAudience(s.jc.Audience),
+		jwt.WithLeeway(30*time.Second),
+	)
 
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
@@ -274,11 +296,68 @@ func (s *AuthService) ValidateToken(signedToken string) (*entity.JWTClaims, erro
 	if claims.TokenType != entity.AccessTokenType {
 		return nil, helper.ErrTokenInvalid.WithMessage("Invalid token type")
 	}
+	if strings.TrimSpace(claims.UserID) == "" || strings.TrimSpace(claims.Username) == "" || strings.TrimSpace(claims.Role) == "" {
+		return nil, helper.ErrTokenInvalid.WithMessage("Required token claims are missing")
+	}
 	if claims.Issuer != s.jc.Issuer {
 		return nil, helper.ErrTokenInvalid.WithMessage("Invalid token issuer")
 	}
+	if claims.Subject != claims.UserID {
+		return nil, helper.ErrTokenInvalid.WithMessage("Invalid token subject")
+	}
 
 	return claims, nil
+}
+
+func (s *AuthService) GetUserRoleByID(userID string) (string, error) {
+	uid, err := uuid.Parse(strings.TrimSpace(userID))
+	if err != nil {
+		return "", helper.ErrTokenInvalid.WithMessage("Invalid token subject")
+	}
+
+	var user entity.User
+
+	if err := s.db.Table("users").Select("role_id").Where("id = ?", uid).Take(&user.RoleID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", helper.ErrTokenInvalid.WithMessage("User not found")
+		}
+		return "", helper.ErrInternal.WithCause(err)
+	}
+
+	if user.RoleID == uuid.Nil {
+		return "", helper.ErrTokenInvalid.WithMessage("User role is not exist")
+	}
+
+	if err := s.db.Table("roles").Select("name").Where("id = ?", user.RoleID).Take(&user.Name).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", helper.ErrTokenInvalid.WithMessage("User role not found")
+		}
+		return "", helper.ErrInternal.WithCause(err)
+	}
+
+	roleName := strings.ToLower(strings.TrimSpace(user.Name))
+	if roleName == "" {
+		return "", helper.ErrTokenInvalid.WithMessage("User role is not exist")
+	}
+
+	return roleName, nil
+}
+
+func (s *AuthService) getRoleIDByName(roleName string) (uuid.UUID, error) {
+	var role entity.Role
+	normalized := strings.ToLower(strings.TrimSpace(roleName))
+	if normalized == "" {
+		return uuid.Nil, helper.ErrInternal.WithMessage("Role name is required")
+	}
+
+	if err := s.db.Where("LOWER(name) = ?", normalized).First(&role).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return uuid.Nil, helper.ErrInternal.WithMessage("Role not found")
+		}
+		return uuid.Nil, helper.ErrInternal.WithCause(err)
+	}
+
+	return role.ID, nil
 }
 
 func (s *AuthService) SessionCookieConfig() entity.SessionCookieConfig {
