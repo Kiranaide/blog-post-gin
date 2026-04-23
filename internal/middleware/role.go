@@ -40,7 +40,7 @@ func RequireRole(auth *service.AuthService, requiredRoles ...string) gin.Handler
 				response.SendError(c, err)
 				return
 			}
-			response.SendError(c, helper.ErrTokenInvalid.WithMessage("Failed to retrieve user role"))
+			response.SendError(c, helper.ErrTokenInvalid.WithMessage("Authentication is required"))
 			return
 		}
 
@@ -48,7 +48,7 @@ func RequireRole(auth *service.AuthService, requiredRoles ...string) gin.Handler
 		normalizedDBRole := strings.ToLower(strings.TrimSpace(dbRole))
 
 		if normalizedTokenRole != normalizedDBRole {
-			response.SendError(c, helper.ErrTokenInvalid.WithMessage("Token role does not match database role"))
+			response.SendError(c, helper.ErrInsufficientRole.WithMessage("You do not have permission to access this resource"))
 			return
 		}
 

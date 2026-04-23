@@ -48,7 +48,7 @@ func (s *AuthService) Register(req dto.RegisterRequest) (*response.RegisterRespo
 		return nil, "", helper.ErrInternal.WithCause(err)
 	}
 
-	defaultRoleID, err := s.getRoleIDByName("user")
+	defaultRoleID, err := s.getRoleIDByName("reader")
 	if err != nil {
 		return nil, "", helper.ErrInternal.WithCause(err)
 	}
@@ -89,7 +89,7 @@ func (s *AuthService) Login(req dto.LoginRequest, userAgent, ip string) (*respon
 
 	roleName, err := s.GetUserRoleByID(user.ID.String())
 	if err != nil {
-		return nil, "", "", helper.ErrInternal.WithCause(err)
+		return nil, "", "", err
 	}
 
 	accessToken, err := s.GenerateToken(user.ID, user.Username, roleName)
@@ -312,10 +312,13 @@ func (s *AuthService) ValidateToken(signedToken string) (*entity.JWTClaims, erro
 func (s *AuthService) GetUserRoleByID(userID string) (string, error) {
 	uid, err := uuid.Parse(strings.TrimSpace(userID))
 	if err != nil {
-		return "", helper.ErrTokenInvalid.WithMessage("Invalid token subject")
+		return "", helper.ErrTokenInvalid.WithMessage("Authentication is required")
 	}
 
-	var user entity.User
+	var user struct {
+		RoleID uuid.UUID `gorm:"column:role_id"`
+		Name   string    `gorm:"column:name"`
+	}
 
 	if err := s.db.Table("users").Select("role_id").Where("id = ?", uid).Take(&user.RoleID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

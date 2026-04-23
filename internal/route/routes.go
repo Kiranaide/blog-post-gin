@@ -10,6 +10,7 @@ import (
 
 type Routes struct {
 	HealthHandler *handler.HealthHandler
+	PostHandler   *handler.PostHandler
 	AuthHandler   *handler.AuthHandler
 	AuthService   *service.AuthService
 }
@@ -30,4 +31,5 @@ func SetupRouter(e *gin.Engine, r *Routes) {
 
 	SetupHealthRouter(api, r.HealthHandler)
 	SetupAuthRouter(api, r.AuthHandler)
+	SetupPostRouter(api, r.PostHandler)
 }

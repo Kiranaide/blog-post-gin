@@ -39,8 +39,10 @@ func main() {
 	}
 
 	authService := service.NewAuthService(db, jwtCfg, argonCfg, cookieCfg)
+	postService := service.NewPostService(db)
 
 	authHandler := handler.NewAuthHandler(authService, entity.SessionCookieConfig{})
+	postHandler := handler.NewPostHandler(postService)
 	healthHandler := handler.NewHealthHandler(db)
 
 	router := gin.New()
@@ -50,6 +52,7 @@ func main() {
 		HealthHandler: healthHandler,
 		AuthHandler:   authHandler,
 		AuthService:   authService,
+		PostHandler:   postHandler,
 	})
 
 	router.GET("/docs/*any", openapiui.WrapHandler(openapiui.Config{
